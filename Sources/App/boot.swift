@@ -2,5 +2,25 @@ import Vapor
 
 /// Called after your application has initialized.
 public func boot(_ app: Application) throws {
-    // your code here
+    guard let slackToken = Environment.get("SLACK_TOKEN") else {
+        fatalError("Missing Slack Token - Cannot establish websocket connection")
+    }
+
+    let headers = HTTPHeaders([("Content-Type", "application/x-www-form-urlencoded")])
+    let response = try app.client().get("https://slack.com/api/rtm.connect",
+                                                  headers: headers) { get in
+                                                    try get.query.encode(["token": slackToken])
+        }.flatMap { try $0.content.decode(SlackRTMConnectionResponse.self) }.wait()
+
+    let rtmConnection = try app.client().webSocket(response.url).flatMap { ws -> Future<Void> in
+        ws.onText({ ws, message in
+            print(message)
+        })
+
+        return ws.onClose
+    }
+
+    try rtmConnection.wait()
 }
+
+
