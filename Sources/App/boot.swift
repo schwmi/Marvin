@@ -14,8 +14,12 @@ public func boot(_ app: Application) throws {
 
     let rtmConnection = try app.client().webSocket(response.url).flatMap { ws -> Future<Void> in
         ws.onText({ ws, message in
-            print(message)
+            guard let msgData = message.data(using: .utf8) else { return }
+            guard let incomingMessage = try? JSONDecoder().decode(SlackIncomingMessage.self, from: msgData) else { return }
+            print(incomingMessage)
         })
+
+
 
         return ws.onClose
     }
