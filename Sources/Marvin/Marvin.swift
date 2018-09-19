@@ -5,9 +5,9 @@ import Vapor
 public final class Marvin {
 
     public struct MessageInformation {
-        let isDirectMessage: Bool
-        let sender: String?
-        let text: String
+        public let isDirectMessage: Bool
+        public let sender: String?
+        public let text: String
     }
 
     private let app: Application
