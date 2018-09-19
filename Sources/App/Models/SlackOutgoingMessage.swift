@@ -1,7 +1,8 @@
+import Vapor
 
 
 /// Message send via socket connection
-struct SlackOutgoingMessage: Encodable {
+struct SlackOutgoingMessage: Content {
 
     let id: UInt32 = 1// UInt32.random(in: 0..<UInt32.max)
     let channel: String

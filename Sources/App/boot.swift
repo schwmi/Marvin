@@ -21,10 +21,16 @@ public func boot(_ app: Application) throws {
             case .message(let message):
 
                 let message = SlackOutgoingMessage(to: message.channel, text: "pong")
-                guard let msgData = try? JSONEncoder().encode(message) else { return }
-                guard let messageText = String(data: msgData, encoding: .utf8) else { return }
 
-                ws.send(messageText)
+                let headers = HTTPHeaders([("Content-Type", "application/json"), ("Authorization", "Bearer \(slackToken)")])
+                let response = try? app.client().post("https://slack.com/api/chat.postMessage",
+                                      headers: headers) { post in
+                                        try post.content.encode(message)
+                    }
+                response?.map({ (response) -> () in
+                    print(response)
+                })
+
             default:
                 print("Ignore")
             }
