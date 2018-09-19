@@ -1,19 +1,37 @@
 import Vapor
 
 
+/// Bot which handles send/receive connection with slack
 public final class Marvin {
+
+    public struct MessageInformation {
+        let isDirectMessage: Bool
+        let sender: String?
+        let text: String
+    }
 
     private let app: Application
     private let slackToken: String
 
-    // MARK: - Lifecylce
+    // MARK: - Properties
 
-    public init(_ env: Environment) throws {
-        self.app = try Application(config: Config.default(), environment: env, services: Services.default())
+    let skills: [Skill]
+
+    // MARK: - Lifecycle
+
+    /// Initializes the bot
+    ///
+    /// - Parameters:
+    ///   - skills: Array of skills provided by the bot -> first matching skill in the array executed
+    ///   - environment: the environment in which the application is running
+    /// - Throws: tbd
+    public init(skills: [Skill], environment: Environment) throws {
+        self.app = try Application(config: Config.default(), environment: environment, services: Services.default())
         guard let slackToken = Environment.slackToken else {
             fatalError("Missing Slack Token - Cannot establish websocket connection")
         }
         self.slackToken = slackToken
+        self.skills = skills
     }
 
     public func run() throws {
@@ -52,11 +70,21 @@ private extension Marvin {
 
                 switch incomingMessage {
                 case .message(let message):
-                    let message = SlackOutgoingMessage(channel: message.channel, text: "Hello", username: connectionRequestResponse.bot.name)
-                    try? self.sendMessage(message)
+                    // TODO: Find out if direct and sender name
+                    let messageInformation = MessageInformation(isDirectMessage: false, sender: nil, text: message.text)
+                    for skill in self.skills {
+                        guard skill.canProcess(messageInformation) else { continue }
+
+                        skill.process(messageInformation, response: { response in
+                            let message = SlackOutgoingMessage(channel: message.channel,
+                                                               text: response,
+                                                               username: connectionRequestResponse.bot.name)
+                            try? self.sendMessage(message)
+                        })
+                    }
 
                 default:
-                    print("Ignore")
+                    print("Ignore Message type \(incomingMessage)")
                 }
             })
 
