@@ -36,25 +36,24 @@ private extension Marvin {
             }.flatMap { try $0.content.decode(SlackRTMConnectionResponse.self) }.wait()
     }
 
-    func sendMessage(_ message: SlackOutgoingMessage) {
+    func sendMessage(_ message: SlackOutgoingMessage) throws {
         let headers = HTTPHeaders([("Content-Type", "application/json"), ("Authorization", "Bearer \(self.slackToken)")])
-        try? app.client().post("https://slack.com/api/chat.postMessage",
+        _ = try app.client().post("https://slack.com/api/chat.postMessage",
                                headers: headers) { post in
                                 try post.content.encode(message)
         }
     }
 
     func establishRTMConnection(connectionRequestResponse: SlackRTMConnectionResponse) throws {
-        try app.client().webSocket(connectionRequestResponse.url).flatMap { ws -> Future<Void> in
+        _ = try app.client().webSocket(connectionRequestResponse.url).flatMap { ws -> Future<Void> in
             ws.onText({ ws, message in
                 guard let msgData = message.data(using: .utf8) else { return }
                 guard let incomingMessage = try? JSONDecoder().decode(SlackIncomingMessage.self, from: msgData) else { return }
 
                 switch incomingMessage {
                 case .message(let message):
-
                     let message = SlackOutgoingMessage(channel: message.channel, text: "Hello", username: connectionRequestResponse.bot.name)
-                    self.sendMessage(message)
+                    try? self.sendMessage(message)
 
                 default:
                     print("Ignore")
