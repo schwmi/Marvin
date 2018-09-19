@@ -20,7 +20,7 @@ public func boot(_ app: Application) throws {
             switch incomingMessage {
             case .message(let message):
 
-                let message = SlackOutgoingMessage(to: message.channel, text: "pong")
+                let message = SlackOutgoingMessage(channel: message.channel, text: "Hello", username: response.bot.name)
 
                 let headers = HTTPHeaders([("Content-Type", "application/json"), ("Authorization", "Bearer \(slackToken)")])
                 let response = try? app.client().post("https://slack.com/api/chat.postMessage",
