@@ -38,8 +38,6 @@ public func boot(_ app: Application) throws {
 
         return ws.onClose
     }
-
-    try rtmConnection.wait()
 }
 
 
