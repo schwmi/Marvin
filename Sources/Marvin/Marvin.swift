@@ -81,23 +81,12 @@ private extension Marvin {
                 case .message(let message):
                     guard let conversationInfo = try? self.retrieveConversationInfo(for: message.channel) else { return }
 
-                    let messageDirectedToMe = message.text.contains("@\(myInfo.id)")
+                    _ = conversationInfo.map { conversationInfo in
+                        let messageDirectedToMe = message.text.contains("@\(myInfo.id)")
+                        guard conversationInfo.channel.isDirectMessage || messageDirectedToMe else { return }
 
-                    conversationInfo.map { result in
-                        print("Is private \(result)")
-                    }
-
-
-                    let messageInformation = MessageInformation(isDirectMessage: false, sender: nil, text: message.text)
-                    for skill in self.skills {
-                        guard skill.canProcess(messageInformation) else { continue }
-
-                        skill.process(messageInformation, response: { response in
-                            let message = SlackOutgoingMessage(channel: message.channel,
-                                                               text: response,
-                                                               username: myInfo.name)
-                            try? self.sendMessage(message)
-                        })
+                        let messageInformation = MessageInformation(isDirectMessage: conversationInfo.channel.isDirectMessage, sender: nil, text: message.text)
+                        self.respondToMessage(messageInformation, inChannel: message.channel, withName: myInfo.name)
                     }
 
                 default:
@@ -106,6 +95,19 @@ private extension Marvin {
             })
 
             return ws.onClose
+        }
+    }
+
+    func respondToMessage(_ message: MessageInformation, inChannel channel: String, withName name: String) {
+        for skill in self.skills {
+            guard skill.canProcess(message) else { continue }
+
+            skill.process(message, response: { response in
+                let message = SlackOutgoingMessage(channel: channel,
+                                                   text: response,
+                                                   username: name)
+                try? self.sendMessage(message)
+            })
         }
     }
 }
