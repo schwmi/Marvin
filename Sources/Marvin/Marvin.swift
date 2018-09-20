@@ -35,7 +35,7 @@ public final class Marvin {
     }
 
     public func run() throws {
-        let connectionRequestResponse = try self.executeRTMConnectionRequest(token: self.slackToken)
+        let connectionRequestResponse = try self.executeRTMConnectionRequest()
         try self.establishRTMConnection(connectionRequestResponse: connectionRequestResponse)
 
         try self.app.run()
@@ -46,11 +46,11 @@ public final class Marvin {
 
 private extension Marvin {
 
-    func executeRTMConnectionRequest(token: String) throws -> SlackRTMConnectionResponse {
+    func executeRTMConnectionRequest() throws -> SlackRTMConnectionResponse {
         let headers = HTTPHeaders([("Content-Type", "application/x-www-form-urlencoded")])
         return try app.client().get("https://slack.com/api/rtm.connect",
                                             headers: headers) { get in
-                                                try get.query.encode(["token": token])
+                                                try get.query.encode(["token": self.slackToken])
             }.flatMap { try $0.content.decode(SlackRTMConnectionResponse.self) }.wait()
     }
 
@@ -62,7 +62,16 @@ private extension Marvin {
         }
     }
 
+    func retrieveConversationInfo(for channelID: String) throws -> EventLoopFuture<SlackConversationsInfo> {
+        let headers = HTTPHeaders([("Content-Type", "application/x-www-form-urlencoded")])
+        return try app.client().get("https://slack.com/api/conversations.info",
+                                    headers: headers) { get in
+                                        try get.query.encode(["token": self.slackToken, "channel": channelID])
+            }.flatMap { try $0.content.decode(SlackConversationsInfo.self) }
+    }
+
     func establishRTMConnection(connectionRequestResponse: SlackRTMConnectionResponse) throws {
+        let myInfo = connectionRequestResponse.bot
         _ = try app.client().webSocket(connectionRequestResponse.url).flatMap { ws -> Future<Void> in
             ws.onText({ ws, message in
                 guard let msgData = message.data(using: .utf8) else { return }
@@ -70,7 +79,15 @@ private extension Marvin {
 
                 switch incomingMessage {
                 case .message(let message):
-                    // TODO: Find out if direct and sender name
+                    guard let conversationInfo = try? self.retrieveConversationInfo(for: message.channel) else { return }
+
+                    let messageDirectedToMe = message.text.contains("@\(myInfo.id)")
+
+                    conversationInfo.map { result in
+                        print("Is private \(result)")
+                    }
+
+
                     let messageInformation = MessageInformation(isDirectMessage: false, sender: nil, text: message.text)
                     for skill in self.skills {
                         guard skill.canProcess(messageInformation) else { continue }
@@ -78,7 +95,7 @@ private extension Marvin {
                         skill.process(messageInformation, response: { response in
                             let message = SlackOutgoingMessage(channel: message.channel,
                                                                text: response,
-                                                               username: connectionRequestResponse.bot.name)
+                                                               username: myInfo.name)
                             try? self.sendMessage(message)
                         })
                     }
