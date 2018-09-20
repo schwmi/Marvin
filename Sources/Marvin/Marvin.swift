@@ -70,6 +70,14 @@ private extension Marvin {
             }.flatMap { try $0.content.decode(SlackConversationsInfo.self) }
     }
 
+    func retrieveUserInfo(for userID: String) throws -> EventLoopFuture<SlackUserInfo> {
+        let headers = HTTPHeaders([("Content-Type", "application/x-www-form-urlencoded")])
+        return try app.client().get("https://slack.com/api/users.info",
+                                    headers: headers) { get in
+                                        try get.query.encode(["token": self.slackToken, "user": userID])
+            }.flatMap { try $0.content.decode(SlackUserInfo.self) }
+    }
+
     func establishRTMConnection(connectionRequestResponse: SlackRTMConnectionResponse) throws {
         let myInfo = connectionRequestResponse.bot
         _ = try app.client().webSocket(connectionRequestResponse.url).flatMap { ws -> Future<Void> in
@@ -80,14 +88,17 @@ private extension Marvin {
                 switch incomingMessage {
                 case .message(let message):
                     guard let conversationInfo = try? self.retrieveConversationInfo(for: message.channel) else { return }
+                    guard let userInfo = try? self.retrieveUserInfo(for: message.user) else { return }
 
-                    _ = conversationInfo.map { conversationInfo in
+                    conversationInfo.and(userInfo).do { conversationInfo, userInfo in
                         let messageDirectedToMe = message.text.contains("@\(myInfo.id)")
                         guard conversationInfo.channel.isDirectMessage || messageDirectedToMe else { return }
 
-                        let messageInformation = MessageInformation(isDirectMessage: conversationInfo.channel.isDirectMessage, sender: nil, text: message.text)
+                        let messageInformation = MessageInformation(isDirectMessage: conversationInfo.channel.isDirectMessage, sender: userInfo.user.name, text: message.text)
                         self.respondToMessage(messageInformation, inChannel: message.channel, withName: myInfo.name)
-                    }
+                        }.catch({ error in
+                            print("Error fetch converation and user info \(error)")
+                        })
 
                 default:
                     print("Ignore Message type \(incomingMessage)")
