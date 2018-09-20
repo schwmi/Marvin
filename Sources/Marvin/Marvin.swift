@@ -108,6 +108,7 @@ private extension Marvin {
                                                    username: name)
                 try? self.sendMessage(message)
             })
+            return
         }
     }
 }
