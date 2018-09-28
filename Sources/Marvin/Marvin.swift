@@ -11,7 +11,9 @@ public final class Marvin {
     }
 
     private let app: Application
+    private let router: Router
     private let slackToken: String
+    private weak var websocket: WebSocket?
 
     // MARK: - Properties
 
@@ -26,7 +28,12 @@ public final class Marvin {
     ///   - environment: the environment in which the application is running
     /// - Throws: tbd
     public init(skills: [Skill], environment: Environment) throws {
-        self.app = try Application(config: Config.default(), environment: environment, services: Services.default())
+        let router = EngineRouter.default()
+        self.router = router
+
+        var services = Services.default()
+        services.register(router, as: Router.self)
+        self.app = try Application(config: Config.default(), environment: environment, services: services)
         guard let slackToken = Environment.slackToken else {
             fatalError("Missing Slack Token - Cannot establish websocket connection")
         }
@@ -35,8 +42,8 @@ public final class Marvin {
     }
 
     public func run() throws {
-        let connectionRequestResponse = try self.executeRTMConnectionRequest()
-        try self.establishRTMConnection(connectionRequestResponse: connectionRequestResponse)
+        try self.establishBotConnection()
+        self.setupBotRestartRoute()
 
         try self.app.run()
     }
@@ -45,6 +52,23 @@ public final class Marvin {
 // MARK: - Private
 
 private extension Marvin {
+
+    func setupBotRestartRoute() {
+        self.router.post("restartBot") { [weak self] Request -> HTTPStatus in
+            guard let `self` = self else { return .internalServerError }
+
+            try self.establishBotConnection()
+            return .ok
+        }
+    }
+
+    func establishBotConnection() throws {
+        if let websocket = self.websocket {
+            websocket.close()
+        }
+        let connectionRequestResponse = try self.executeRTMConnectionRequest()
+        try self.establishRTMConnection(connectionRequestResponse: connectionRequestResponse)
+    }
 
     func executeRTMConnectionRequest() throws -> SlackRTMConnectionResponse {
         let headers = HTTPHeaders([("Content-Type", "application/x-www-form-urlencoded")])
@@ -81,6 +105,7 @@ private extension Marvin {
     func establishRTMConnection(connectionRequestResponse: SlackRTMConnectionResponse) throws {
         let myInfo = connectionRequestResponse.bot
         _ = try app.client().webSocket(connectionRequestResponse.url).flatMap { ws -> Future<Void> in
+            self.websocket = ws
             ws.onText({ ws, message in
                 guard let msgData = message.data(using: .utf8) else { return }
                 guard let incomingMessage = try? JSONDecoder().decode(SlackIncomingMessage.self, from: msgData) else { return }
