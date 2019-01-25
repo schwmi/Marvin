@@ -54,35 +54,41 @@ public final class Marvin {
 private extension Marvin {
 
     func setupBotRestartRoute() {
-        self.router.post("restartBot") { [weak self] Request -> HTTPStatus in
+        self.router.post("restartBot") { [weak self] request -> HTTPStatus in
             guard let `self` = self else { return .internalServerError }
 
-            try self.establishBotConnection()
-            return .ok
+            do {
+                try self.establishBotConnection()
+                return .ok
+            } catch {
+                print("Error when creating connection \(error)")
+                return .internalServerError
+            }
         }
     }
 
     func establishBotConnection() throws {
-        if let websocket = self.websocket {
+        if let websocket = self.websocket, websocket.isClosed == false {
             websocket.close()
         }
-        let connectionRequestResponse = try self.executeRTMConnectionRequest()
-        try self.establishRTMConnection(connectionRequestResponse: connectionRequestResponse)
+        try self.executeRTMConnectionRequest().whenSuccess { connectionRequestResponse in
+            try? self.establishRTMConnection(connectionRequestResponse: connectionRequestResponse)
+        }
     }
 
-    func executeRTMConnectionRequest() throws -> SlackRTMConnectionResponse {
+    func executeRTMConnectionRequest() throws -> EventLoopFuture<SlackRTMConnectionResponse> {
         let headers = HTTPHeaders([("Content-Type", "application/x-www-form-urlencoded")])
         return try app.client().get("https://slack.com/api/rtm.connect",
-                                            headers: headers) { get in
-                                                try get.query.encode(["token": self.slackToken])
-            }.flatMap { try $0.content.decode(SlackRTMConnectionResponse.self) }.wait()
+                                    headers: headers) { get in
+                                        try get.query.encode(["token": self.slackToken])
+            }.flatMap { try $0.content.decode(SlackRTMConnectionResponse.self) }
     }
 
     func sendMessage(_ message: SlackOutgoingMessage) throws {
         let headers = HTTPHeaders([("Content-Type", "application/json"), ("Authorization", "Bearer \(self.slackToken)")])
         _ = try app.client().post("https://slack.com/api/chat.postMessage",
-                               headers: headers) { post in
-                                try post.content.encode(message)
+                                  headers: headers) { post in
+                                    try post.content.encode(message)
         }
     }
 
@@ -105,6 +111,7 @@ private extension Marvin {
     func establishRTMConnection(connectionRequestResponse: SlackRTMConnectionResponse) throws {
         let myInfo = connectionRequestResponse.bot
         _ = try app.client().webSocket(connectionRequestResponse.url).flatMap { ws -> Future<Void> in
+            print("Did start slack websocket connection")
             self.websocket = ws
             ws.onText({ ws, message in
                 guard let msgData = message.data(using: .utf8) else { return }
@@ -119,6 +126,7 @@ private extension Marvin {
                         let messageDirectedToMe = message.text.contains("@\(myInfo.id)")
                         guard conversationInfo.channel.isDirectMessage || messageDirectedToMe else { return }
 
+                        print("Did receive message from \(userInfo.user.name)")
                         let messageInformation = MessageInformation(isDirectMessage: conversationInfo.channel.isDirectMessage, sender: userInfo.user.name, text: message.text)
                         self.respondToMessage(messageInformation, inChannel: message.channel, withName: myInfo.name)
                         }.catch({ error in
@@ -130,6 +138,9 @@ private extension Marvin {
                 }
             })
 
+            ws.onCloseCode { _ in
+                print("Websocket did close")
+            }
             return ws.onClose
         }
     }
