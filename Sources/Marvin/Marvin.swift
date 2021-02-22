@@ -68,14 +68,21 @@ private extension Marvin {
         if let websocket = self.websocket, websocket.isClosed == false {
             _ = websocket.close()
         }
-        self.executeRTMConnectionRequest().whenSuccess { connectionRequestResponse in
-            try? self.establishRTMConnection(connectionRequestResponse: connectionRequestResponse)
+        self.executeRTMConnectionRequest().whenComplete { result in
+            switch result {
+            case .success(let connectionRequestResponse):
+                try? self.establishRTMConnection(connectionRequestResponse: connectionRequestResponse)
+            case .failure(let error):
+                print("Error when trying to establish RTM connection \(error)")
+            }
         }
     }
 
     func executeRTMConnectionRequest() -> EventLoopFuture<SlackRTMConnectionResponse> {
         let headers = HTTPHeaders([("Content-Type", "application/x-www-form-urlencoded")])
-        return self.app.client.get("https://slack.com/api/rtm.connect", headers: headers).flatMapThrowing { response in
+        return self.app.client.get("https://slack.com/api/rtm.connect", headers: headers) { request in
+            try request.query.encode(["token": self.slackToken])
+        }.flatMapThrowing { response in
             return try response.content.decode(SlackRTMConnectionResponse.self)
         }
     }
@@ -134,6 +141,10 @@ private extension Marvin {
                     print("Ignore Message type \(incomingMessage)")
                 }
             })
+
+            ws.onPong { ws in
+                ws.sendPing()
+            }
 
             ws.onClose.whenComplete { _ in
                 print("Websocket did close")
