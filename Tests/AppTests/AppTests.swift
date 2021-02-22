@@ -1,5 +1,5 @@
 import XCTest
-@testable import App
+@testable import Marvin
 
 class AppTests: XCTestCase {
     func testStub() throws {
