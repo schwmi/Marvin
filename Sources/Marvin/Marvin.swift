@@ -11,7 +11,6 @@ public final class Marvin {
     }
 
     private let app: Application
-    private let router: Router
     private let slackToken: String
     private weak var websocket: WebSocket?
 
@@ -25,18 +24,15 @@ public final class Marvin {
     ///
     /// - Parameters:
     ///   - skills: Array of skills provided by the bot -> first matching skill in the array executed
-    ///   - environment: the environment in which the application is running
     /// - Throws: tbd
-    public init(skills: [Skill], environment: Environment) throws {
-        let router = EngineRouter.default()
-        self.router = router
-
-        var services = Services.default()
-        services.register(router, as: Router.self)
-        self.app = try Application(config: Config.default(), environment: environment, services: services)
+    public init(skills: [Skill]) throws {
+        var environment = try Environment.detect()
+        try LoggingSystem.bootstrap(from: &environment)
+        self.app = Application(environment)
         guard let slackToken = Environment.slackToken else {
             fatalError("Missing Slack Token - Cannot establish websocket connection")
         }
+
         self.slackToken = slackToken
         self.skills = skills
     }
@@ -45,6 +41,7 @@ public final class Marvin {
         try self.establishBotConnection()
         self.setupBotRestartRoute()
 
+        defer { app.shutdown() }
         try self.app.run()
     }
 }
